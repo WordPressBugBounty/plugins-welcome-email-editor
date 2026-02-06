@@ -5,7 +5,9 @@
  * @package Welcome_Email_Editor
  */
 
+use Weed\Helpers\Content_Helper;
 use Weed\Settings\Settings_Module;
+use Weed\Vars;
 
 defined( 'ABSPATH' ) || die( "Can't access directly" );
 
@@ -16,17 +18,20 @@ defined( 'ABSPATH' ) || die( "Can't access directly" );
  */
 return function ( $module ) {
 
-	$defaults = $module->defaults;
-	$values   = $module->values;
+	$defaults = Content_Helper::default_settings();
+	$values   = Vars::get( 'values' );
 	?>
 
 	<input type="text" name="weed_settings[admin_new_user_notif_email_custom_recipients]" id="weed_settings--admin_new_user_notif_email_custom_recipients" class="regular-text" value="<?php echo esc_attr( $values['admin_new_user_notif_email_custom_recipients'] ); ?>" placeholder="<?php echo esc_attr( $defaults['admin_new_user_notif_email_custom_recipients'] ); ?>" />
 
 	<p class="description">
-		<?php _e( 'To include additional recipients for the notification email when a new user is registered, add a comma-separated list of user ID\'s (Example: 1, 2, 3, 4).', 'welcome-email-editor' ); ?>
+		<?php esc_html_e( 'To include additional recipients for the notification email when a new user is registered, add a comma-separated list of user ID\'s (Example: 1, 2, 3, 4).', 'welcome-email-editor' ); ?>
 	</p>
 	<p class="description">
-		<?php echo sprintf( __( 'By default, this email is sent only to the website admin (%1s).', 'welcome-email-editor' ), get_option( 'admin_email' ) ); ?>
+		<?php
+		/* translators: %1s: Admin email address */
+		echo esc_html( sprintf( __( 'By default, this email is sent only to the website admin (%1s).', 'welcome-email-editor' ), get_option( 'admin_email' ) ) );
+		?>
 	</p>
 
 	<?php

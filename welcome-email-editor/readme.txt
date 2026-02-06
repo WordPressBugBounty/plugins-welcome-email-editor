@@ -2,8 +2,8 @@
 Contributors: davidvongries
 Tags: WP Mail SMTP, Welcome Email Editor, Custom SMTP, SMTP, WordPress Email
 Requires at least: 4.6
-Tested up to: 6.7
-Stable tag: 6.2.1
+Tested up to: 6.9
+Stable tag: 6.3
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -61,6 +61,11 @@ Since version 4.3, the password is no longer sent to the user via email, and ins
 1. Swift SMTP Settings
 
 == Changelog ==
+= 6.3 | December 01, 2025 =
+* New: Mailjet integration
+= 6.2.2 | October 30, 2025 =
+* Fixed: Translation notice issue
+* Fixed: Added missing data sanitization
 = 6.2.1 | January 04, 2025 =
 * New: Email logs are now filterable
 * Fixed: Broken reset password link

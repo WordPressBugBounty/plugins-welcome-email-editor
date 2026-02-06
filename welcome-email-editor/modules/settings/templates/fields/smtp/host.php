@@ -6,6 +6,7 @@
  */
 
 use Weed\Settings\Settings_Module;
+use Weed\Vars;
 
 defined( 'ABSPATH' ) || die( "Can't access directly" );
 
@@ -16,12 +17,14 @@ defined( 'ABSPATH' ) || die( "Can't access directly" );
  */
 return function ( $module ) {
 
-	$values = $module->values;
+	$values = Vars::get( 'values' );
 	$value  = ! empty( $values['smtp_host'] ) ? $values['smtp_host'] : '';
 	?>
 
-	<input type="text" name="weed_settings[smtp_host]" id="weed_settings--smtp_host" class="regular-text"
-			value="<?php echo esc_attr( $value ); ?>" placeholder="Example: smtp.zoho.com"/>
+	<div data-show-when-mailer-type="smtp">
+		<input type="text" name="weed_settings[smtp_host]" id="weed_settings--smtp_host" class="regular-text"
+				value="<?php echo esc_attr( $value ); ?>" placeholder="Example: smtp.zoho.com"/>
+	</div>
 
 	<?php
 

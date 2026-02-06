@@ -7,10 +7,12 @@
 
 namespace Weed;
 
+use Weed\Helpers\Content_Helper;
+
 defined( 'ABSPATH' ) || die( "Can't access directly" );
 
 /**
- * Class to set up Ultimate Quick View plugin.
+ * Class to set up Welcome Email Editor plugin.
  */
 class Setup {
 	/**
@@ -49,9 +51,13 @@ class Setup {
 	 */
 	public function setup() {
 
-		$this->set_data();
+		// Always load latest settings from DB at the start of each request.
+		$this->set_initial_data();
 
-		add_filter( 'plugin_action_links_' . WEED_PLUGIN_BASENAME, array( $this, 'plugin_action_links' ) );
+		add_action( 'updated_option_weed_settings', [ $this, 'handle_updated_option' ], 10, 3 );
+
+		add_action( 'init', array( $this, 'update_initial_data' ), 1 );
+		add_action( 'init', array( $this, 'register_action_links' ) );
 		add_filter( 'admin_body_class', array( $this, 'admin_body_class' ) );
 
 		$this->load_modules();
@@ -61,33 +67,15 @@ class Setup {
 	}
 
 	/**
-	 * Provide data for the plugin.
+	 * Provide initial data for the plugin.
 	 * This is optimal strategy to only get_option once across modules.
+	 *
+	 * At this point, we don't use the real default values
+	 * because it contains translation functions calling.
 	 */
-	public function set_data() {
+	private function set_initial_data() {
 
-		/* translators: %s: User login. */
-		$user_welcome_email_body  = __( 'Username:', 'welcome-email-editor' ) . ' [user_login]' . "\r\n\r\n";
-		$user_welcome_email_body .= __( 'To set your password, visit the following address:' ) . "\r\n\r\n";
-		$user_welcome_email_body .= '[reset_pass_url]' . "\r\n\r\n";
-		$user_welcome_email_body .= '[login_url]' . "\r\n";
-
-		/* translators: %s: Site title. */
-		$admin_welcome_email_body = __( 'New user registration on your site', 'welcome-email-editor' ) . " [blog_name]\r\n\r\n";
-		/* translators: %s: User login. */
-		$admin_welcome_email_body .= __( 'Username:', 'welcome-email-editor' ) . " [user_login]\r\n\r\n";
-		/* translators: %s: User email address. */
-		$admin_welcome_email_body .= __( 'Email:', 'welcome-email-editor' ) . " [user_email]\r\n";
-
-		$reset_password_message = __( 'Someone has requested a password reset for the following account:', 'welcome-email-editor' ) . "\r\n\r\n";
-		/* translators: %s: Site name. */
-		$reset_password_message .= __( 'Site Name:', 'welcome-email-editor' ) . " [blog_name]\r\n\r\n";
-		/* translators: %s: User login. */
-		$reset_password_message .= __( 'Username:', 'welcome-email-editor' ) . " [user_login]\r\n\r\n";
-		$reset_password_message .= __( 'If this was a mistake, ignore this email and nothing will happen.', 'welcome-email-editor' ) . "\r\n\r\n";
-		$reset_password_message .= __( 'To reset your password, visit the following address:', 'welcome-email-editor' ) . "\r\n\r\n";
-		$reset_password_message .= '[reset_pass_url]' . "\r\n\r\n";
-		$reset_password_message .= "[not_logged_in]This password reset request originated from the IP address [user_ip].[/not_logged_in]\r\n";
+		$settings = get_option( 'weed_settings', array() );
 
 		$defaults = array(
 			// General settings.
@@ -98,7 +86,7 @@ class Setup {
 			'content_type'                                 => 'text',
 
 			// Test SMTP settings.
-			'test_smtp_recipient_email'                    => get_bloginfo( 'admin_email' ),
+			'test_smtp_recipient_email'                    => '',
 
 			// SMTP settings.
 			'smtp_host'                                    => '',
@@ -108,33 +96,55 @@ class Setup {
 			'smtp_password'                                => '',
 
 			// Welcome email settings - for user.
-			'user_welcome_email_subject'                   => '[[blog_name]] ' . __( 'Login Details', 'welcome-email-editor' ),
-			'user_welcome_email_body'                      => $user_welcome_email_body,
+			'user_welcome_email_subject'                   => '',
+			'user_welcome_email_body'                      => '',
 			'user_welcome_email_attachment_url'            => '',
 			'user_welcome_email_reply_to_email'            => '',
 			'user_welcome_email_reply_to_name'             => '',
 			'user_welcome_email_additional_headers'        => '',
 
 			// Welcome email settings - for admin.
-			'admin_new_user_notif_email_subject'           => '[[blog_name]] ' . __( 'New User Registration', 'welcome-email-editor' ),
-			'admin_new_user_notif_email_body'              => $admin_welcome_email_body,
+			'admin_new_user_notif_email_subject'           => '',
+			'admin_new_user_notif_email_body'              => '',
 			'admin_new_user_notif_email_custom_recipients' => '',
 
 			// Reset password email settings.
-			'reset_password_email_subject'                 => '[[blog_name]] ' . __( 'Password Reset', 'welcome-email-editor' ),
-			'reset_password_email_body'                    => $reset_password_message,
+			'reset_password_email_subject'                 => '',
+			'reset_password_email_body'                    => '',
 		);
-
-		$settings = get_option( 'weed_settings', array() );
-
-		if ( ! empty( $settings['smtp_port'] ) && is_string( $settings['smtp_port'] ) ) {
-			$settings['smtp_port'] = absint( $settings['smtp_port'] );
-		}
 
 		$values = wp_parse_args( $settings, $defaults );
 
-		Vars::set( 'default_settings', $defaults );
-		Vars::set( 'settings', $settings );
+		Vars::set( 'values', $values );
+	}
+
+	/**
+	 * Update initial data of the settings cache.
+	 */
+	public function update_initial_data() {
+
+		$values = ( new Content_Helper() )->parse_settings();
+
+		Vars::set( 'values', $values );
+
+	}
+
+	/**
+	 * Update settings cache after 'weed_settings' option is updated.
+	 *
+	 * Fires after the value of a 'weed_settings' option has been changed
+	 * via 'updated_option_weed_settings' hook.
+	 *
+	 * @see https://developer.wordpress.org/reference/hooks/update_option_option/
+	 *
+	 * @param mixed  $old_value The old option value.
+	 * @param mixed  $value     The new option value.
+	 * @param string $option    Option name.
+	 */
+	public function handle_updated_option( $old_value, $value, $option ) {
+
+		$values = ( new Content_Helper() )->parse_settings( is_array( $value ) ? $value : array() );
+
 		Vars::set( 'values', $values );
 
 	}
@@ -146,9 +156,10 @@ class Setup {
 
 		$modules = array();
 
-		$modules['Weed\\Settings\\Settings_Module'] = __DIR__ . '/modules/settings/class-settings-module.php';
-		$modules['Weed\\Smtp\\Smtp_Module']         = __DIR__ . '/modules/smtp/class-smtp-module.php';
-		$modules['Weed\\Logs\\Logs_Module']         = __DIR__ . '/modules/logs/class-logs-module.php';
+		$modules['Weed\\Settings\\Settings_Module']       = __DIR__ . '/modules/settings/class-settings-module.php';
+		$modules['Weed\\Smtp\\Smtp_Module']               = __DIR__ . '/modules/smtp/class-smtp-module.php';
+		$modules['Weed\\Mailjet_Api\\Mailjet_Api_Module'] = __DIR__ . '/modules/mailjet-api/class-mailjet-api-module.php';
+		$modules['Weed\\Logs\\Logs_Module']               = __DIR__ . '/modules/logs/class-logs-module.php';
 
 		$modules = apply_filters( 'weed_modules', $modules );
 
@@ -171,6 +182,16 @@ class Setup {
 	}
 
 	/**
+	 * Register plugin action links filter after init hook.
+	 * This ensures translations are loaded before the callback is executed.
+	 */
+	public function register_action_links() {
+
+		add_filter( 'plugin_action_links_' . WEED_PLUGIN_BASENAME, array( $this, 'plugin_action_links' ) );
+
+	}
+
+	/**
 	 * Add action links displayed in plugins page.
 	 *
 	 * @param array $links The action links array.
@@ -179,7 +200,7 @@ class Setup {
 	 */
 	public function plugin_action_links( $links ) {
 
-		$settings = array( '<a href="' . admin_url( 'admin.php?page=weed_settings' ) . '">' . __( 'Settings', 'ultimate-quick-view-woocommerce' ) . '</a>' );
+		$settings = array( '<a href="' . admin_url( 'admin.php?page=weed_settings' ) . '">' . __( 'Settings', 'welcome-email-editor' ) . '</a>' );
 
 		return array_merge( $settings, $links );
 

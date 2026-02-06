@@ -35,8 +35,6 @@ class Logs_Output extends Base_Output {
 	 */
 	public function __construct() {
 
-		parent::__construct();
-
 		$this->url = WEED_PLUGIN_URL . '/modules/settings';
 
 	}
@@ -161,9 +159,9 @@ class Logs_Output extends Base_Output {
 			// Dropdown options for email status
 			?>
 			<select name="email_status" id="email_status">
-				<option value=""><?php _e( 'All Statuses', 'welcome-email-editor' ); ?></option>
-				<option value="Success" <?php selected( $selected, 'Success' ); ?>><?php _e( 'Success', 'welcome-email-editor' ); ?></option>
-				<option value="Failed" <?php selected( $selected, 'Failed' ); ?>><?php _e( 'Failed', 'welcome-email-editor' ); ?></option>
+				<option value=""><?php esc_html_e( 'All Statuses', 'welcome-email-editor' ); ?></option>
+				<option value="Success" <?php selected( $selected, 'Success' ); ?>><?php esc_html_e( 'Success', 'welcome-email-editor' ); ?></option>
+				<option value="Failed" <?php selected( $selected, 'Failed' ); ?>><?php esc_html_e( 'Failed', 'welcome-email-editor' ); ?></option>
 			</select>
 			<?php
 		}
@@ -190,7 +188,7 @@ class Logs_Output extends Base_Output {
 
 		add_meta_box(
 			'email_logs_metabox',
-			__( 'Email Log Details' ),
+			__( 'Email Log Details', 'welcome-email-editor' ),
 			array( $this, 'email_logs_metabox_callback' ),
 			'weed_email_logs',
 			'normal',

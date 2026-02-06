@@ -75,6 +75,7 @@ return function () {
 					<!-- Faking H1 tag to place admin notices -->
 					<h1 style="display: none;"></h1>
 
+					<?php settings_errors(); ?>
 					<?php settings_fields( 'weed-settings-group' ); ?>
 
 					<div class="heatbox-admin-panel" data-show-when-tab="smtp">
@@ -82,8 +83,12 @@ return function () {
 							<?php do_settings_sections( 'weed-general-settings' ); ?>
 						</div>
 
-						<div class="heatbox">
+						<div class="heatbox" data-show-when-mailer-type="smtp">
 							<?php do_settings_sections( 'weed-smtp-settings' ); ?>
+						</div>
+
+						<div class="heatbox" data-show-when-mailer-type="mailjet_api">
+							<?php do_settings_sections( 'weed-mailjet-api-settings' ); ?>
 						</div>
 					</div>
 
@@ -143,6 +148,7 @@ return function () {
 					<div class="heatbox-admin-panel" data-show-when-tab="smtp">
 						<?php
 						require __DIR__ . '/metaboxes/test-smtp-metabox.php';
+						require __DIR__ . '/metaboxes/test-mailjet-api-metabox.php';
 						require __DIR__ . '/metaboxes/review-metabox.php';
 						?>
 					</div>

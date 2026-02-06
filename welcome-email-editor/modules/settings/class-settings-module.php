@@ -35,8 +35,6 @@ class Settings_Module extends Base_Module {
 	 */
 	public function __construct() {
 
-		parent::__construct();
-
 		$this->url = WEED_PLUGIN_URL . '/modules/settings';
 
 	}
@@ -120,7 +118,7 @@ class Settings_Module extends Base_Module {
 			'dashicons-email', // Icon (you can change this to any Dashicon)
 			60 // Position in the menu
 		);
-	
+
 	}
 
 	/**
@@ -172,10 +170,11 @@ class Settings_Module extends Base_Module {
 			'weedSettings',
 			array(
 				'nonces'          => array(
-					'adminWelcomeEmail'  => wp_create_nonce( WEED_PLUGIN_DIR . '_Admin_Welcome_Email' ),
-					'userWelcomeEmail'   => wp_create_nonce( WEED_PLUGIN_DIR . '_User_Welcome_Email' ),
-					'resetPasswordEmail' => wp_create_nonce( WEED_PLUGIN_DIR . '_Reset_Password_Email' ),
-					'testSmtpEmail'      => wp_create_nonce( WEED_PLUGIN_DIR . '_Test_SMTP_Email' ),
+					'adminWelcomeEmail'   => wp_create_nonce( WEED_PLUGIN_DIR . '_Admin_Welcome_Email' ),
+					'userWelcomeEmail'    => wp_create_nonce( WEED_PLUGIN_DIR . '_User_Welcome_Email' ),
+					'resetPasswordEmail'  => wp_create_nonce( WEED_PLUGIN_DIR . '_Reset_Password_Email' ),
+					'testSmtpEmail'       => wp_create_nonce( WEED_PLUGIN_DIR . '_Test_SMTP_Email' ),
+					'testMailjetApiEmail' => wp_create_nonce( WEED_PLUGIN_DIR . '_Test_Mailjet_API_Email' ),
 				),
 				'warningMessages' => array(
 					'resetSettings' => __( 'Caution! Are you sure you want to reset all settings?', 'welcome-email-editor' ),
@@ -209,12 +208,20 @@ class Settings_Module extends Base_Module {
 	public function add_settings() {
 
 		// Register settings.
-		register_setting( 'weed-settings-group', 'weed_settings' );
+		register_setting(
+			'weed-settings-group',
+			'weed_settings',
+			array(
+				'sanitize_callback' => array( $this, 'sanitize_settings' ),
+			)
+		);
 
 		// Register sections.
 		add_settings_section( 'weed-general-section', __( 'General Settings', 'welcome-email-editor' ), '', 'weed-general-settings' );
 		add_settings_section( 'weed-smtp-section', __( 'SMTP Settings', 'welcome-email-editor' ), '', 'weed-smtp-settings' );
+		add_settings_section( 'weed-mailjet-api-section', __( 'Mailjet API Settings', 'welcome-email-editor' ), '', 'weed-mailjet-api-settings' );
 		add_settings_section( 'weed-test-smtp-section', __( 'Send Test Email', 'welcome-email-editor' ), '', 'weed-test-smtp-settings' );
+		add_settings_section( 'weed-mailjet-api-test-section', __( 'Send Test Email (Mailjet API)', 'welcome-email-editor' ), '', 'weed-mailjet-api-test-settings' );
 		add_settings_section( 'weed-user-welcome-email-section', __( 'Welcome Email (for Users)', 'welcome-email-editor' ), '', 'weed-user-welcome-email-settings' );
 		add_settings_section( 'weed-admin-new-user-notif-email-section', __( 'New User Notification Email (for Admins)', 'welcome-email-editor' ), '', 'weed-admin-new-user-notif-email-settings' );
 		add_settings_section( 'weed-reset-password-email-section', __( 'Reset Password Email', 'welcome-email-editor' ), '', 'weed-reset-password-email-settings' );
@@ -277,7 +284,19 @@ class Settings_Module extends Base_Module {
 			'weed-general-section'
 		);
 
+		add_settings_field(
+			'mailer-type',
+			__( 'Integration', 'welcome-email-editor' ),
+			array(
+				$this,
+				'mailer_type_field',
+			),
+			'weed-general-settings',
+			'weed-general-section'
+		);
+
 		// SMTP fields.
+
 		add_settings_field(
 			'smtp-host',
 			__( 'SMTP Host', 'welcome-email-editor' ),
@@ -333,6 +352,29 @@ class Settings_Module extends Base_Module {
 			'weed-smtp-section'
 		);
 
+		// Mailjet API fields.
+		add_settings_field(
+			'mailjet-api-key',
+			__( 'Mailjet API Key', 'welcome-email-editor' ),
+			array(
+				$this,
+				'mailjet_api_key_field',
+			),
+			'weed-mailjet-api-settings',
+			'weed-mailjet-api-section'
+		);
+
+		add_settings_field(
+			'mailjet-secret-key',
+			__( 'Mailjet Secret Key', 'welcome-email-editor' ),
+			array(
+				$this,
+				'mailjet_secret_key_field',
+			),
+			'weed-mailjet-api-settings',
+			'weed-mailjet-api-section'
+		);
+
 		add_settings_field(
 			'test-smtp',
 			'',
@@ -342,6 +384,18 @@ class Settings_Module extends Base_Module {
 			),
 			'weed-test-smtp-settings',
 			'weed-test-smtp-section'
+		);
+
+		// Mailjet API test field.
+		add_settings_field(
+			'test-mailjet-api',
+			'',
+			array(
+				$this,
+				'mailjet_api_test_field',
+			),
+			'weed-mailjet-api-test-settings',
+			'weed-mailjet-api-test-section'
 		);
 
 		// User welcome email fields.
@@ -528,6 +582,146 @@ class Settings_Module extends Base_Module {
 	}
 
 	/**
+	 * Sanitize settings.
+	 *
+	 * @param array $input The input values to sanitize.
+	 * @return array The sanitized values.
+	 */
+	public function sanitize_settings( $input ) {
+
+		if ( ! is_array( $input ) ) {
+			return array();
+		}
+
+		$sanitized = array();
+
+		// General settings - Email fields.
+		if ( isset( $input['from_email'] ) ) {
+			$sanitized['from_email'] = sanitize_text_field( $input['from_email'] );
+		}
+
+		if ( isset( $input['force_from_email'] ) ) {
+			$sanitized['force_from_email'] = 1;
+		}
+
+		if ( isset( $input['from_name'] ) ) {
+			$sanitized['from_name'] = sanitize_text_field( $input['from_name'] );
+		}
+
+		if ( isset( $input['force_from_name'] ) ) {
+			$sanitized['force_from_name'] = 1;
+		}
+
+		if ( isset( $input['content_type'] ) ) {
+			$allowed_content_types     = array( 'html', 'text' );
+			$sanitized['content_type'] = in_array( $input['content_type'], $allowed_content_types, true ) ? $input['content_type'] : 'html';
+		}
+
+		// SMTP settings.
+		if ( isset( $input['mailer_type'] ) ) {
+			$allowed_mailer_types     = array( 'smtp', 'mailjet_api' );
+			$sanitized['mailer_type'] = in_array( $input['mailer_type'], $allowed_mailer_types, true ) ? $input['mailer_type'] : 'smtp';
+		}
+
+		if ( isset( $input['mailjet_api_key'] ) ) {
+			$sanitized['mailjet_api_key'] = sanitize_text_field( $input['mailjet_api_key'] );
+		}
+
+		if ( isset( $input['mailjet_secret_key'] ) ) {
+			$sanitized['mailjet_secret_key'] = sanitize_text_field( $input['mailjet_secret_key'] );
+		}
+
+		if ( isset( $input['smtp_host'] ) ) {
+			$sanitized['smtp_host'] = sanitize_text_field( $input['smtp_host'] );
+		}
+
+		if ( isset( $input['smtp_encryption'] ) ) {
+			$allowed_encryptions          = array( '', 'ssl', 'tls' );
+			$sanitized['smtp_encryption'] = in_array( $input['smtp_encryption'], $allowed_encryptions, true ) ? $input['smtp_encryption'] : '';
+		}
+
+		if ( isset( $input['smtp_port'] ) ) {
+			$sanitized['smtp_port'] = absint( $input['smtp_port'] );
+		}
+
+		if ( isset( $input['smtp_username'] ) ) {
+			$sanitized['smtp_username'] = sanitize_text_field( $input['smtp_username'] );
+		}
+
+		if ( isset( $input['smtp_password'] ) ) {
+			$sanitized['smtp_password'] = sanitize_text_field( $input['smtp_password'] );
+		}
+
+		if ( isset( $input['test_smtp_recipient_email'] ) ) {
+			$sanitized['test_smtp_recipient_email'] = sanitize_text_field( $input['test_smtp_recipient_email'] );
+		}
+
+		if ( isset( $input['test_mailjet_api_recipient_email'] ) ) {
+			$sanitized['test_mailjet_api_recipient_email'] = sanitize_text_field( $input['test_mailjet_api_recipient_email'] );
+		}
+
+		// User welcome email settings.
+		if ( isset( $input['user_welcome_email_subject'] ) ) {
+			$sanitized['user_welcome_email_subject'] = sanitize_text_field( $input['user_welcome_email_subject'] );
+		}
+
+		if ( isset( $input['user_welcome_email_body'] ) ) {
+			$sanitized['user_welcome_email_body'] = wp_kses_post( $input['user_welcome_email_body'] );
+		}
+
+		if ( isset( $input['user_welcome_email_attachment_url'] ) ) {
+			$sanitized['user_welcome_email_attachment_url'] = esc_url_raw( $input['user_welcome_email_attachment_url'] );
+		}
+
+		if ( isset( $input['user_welcome_email_reply_to_email'] ) ) {
+			$sanitized['user_welcome_email_reply_to_email'] = sanitize_text_field( $input['user_welcome_email_reply_to_email'] );
+		}
+
+		if ( isset( $input['user_welcome_email_reply_to_name'] ) ) {
+			$sanitized['user_welcome_email_reply_to_name'] = sanitize_text_field( $input['user_welcome_email_reply_to_name'] );
+		}
+
+		if ( isset( $input['user_welcome_email_additional_headers'] ) ) {
+			$sanitized['user_welcome_email_additional_headers'] = sanitize_textarea_field( $input['user_welcome_email_additional_headers'] );
+		}
+
+		// Admin new user notification email settings.
+		if ( isset( $input['admin_new_user_notif_email_subject'] ) ) {
+			$sanitized['admin_new_user_notif_email_subject'] = sanitize_text_field( $input['admin_new_user_notif_email_subject'] );
+		}
+
+		if ( isset( $input['admin_new_user_notif_email_body'] ) ) {
+			$sanitized['admin_new_user_notif_email_body'] = wp_kses_post( $input['admin_new_user_notif_email_body'] );
+		}
+
+		if ( isset( $input['admin_new_user_notif_email_custom_recipients'] ) ) {
+			$sanitized['admin_new_user_notif_email_custom_recipients'] = sanitize_text_field( $input['admin_new_user_notif_email_custom_recipients'] );
+		}
+
+		// Reset password email settings.
+		if ( isset( $input['reset_password_email_subject'] ) ) {
+			$sanitized['reset_password_email_subject'] = sanitize_text_field( $input['reset_password_email_subject'] );
+		}
+
+		if ( isset( $input['reset_password_email_body'] ) ) {
+			$sanitized['reset_password_email_body'] = wp_kses_post( $input['reset_password_email_body'] );
+		}
+
+		// Email logging settings.
+		if ( isset( $input['enable_email_logging'] ) ) {
+			$sanitized['enable_email_logging'] = 1;
+		}
+
+		// Misc settings.
+		if ( isset( $input['remove_on_uninstall'] ) ) {
+			$sanitized['remove_on_uninstall'] = 1;
+		}
+
+		return $sanitized;
+
+	}
+
+	/**
 	 * From email field.
 	 */
 	public function from_email_field() {
@@ -575,7 +769,7 @@ class Settings_Module extends Base_Module {
 		$field = require __DIR__ . '/templates/fields/general/content-type.php';
 		$field( $this );
 
-	} 
+	}
 
 	/**
 	 * SMTP host field.
@@ -607,6 +801,8 @@ class Settings_Module extends Base_Module {
 
 	}
 
+
+
 	/**
 	 * SMTP username field.
 	 */
@@ -628,11 +824,61 @@ class Settings_Module extends Base_Module {
 	}
 
 	/**
+	 * Mailer type field.
+	 */
+	public function mailer_type_field() {
+
+		$field = require __DIR__ . '/templates/fields/smtp/mailer-type.php';
+		$field( $this );
+
+	}
+
+	/**
+	 * Mailjet API Key field.
+	 */
+	public function mailjet_api_key_field() {
+
+		$field = require __DIR__ . '/templates/fields/smtp/mailjet-api-key.php';
+		$field( $this );
+
+	}
+
+	/**
+	 * Mailjet Secret Key field.
+	 */
+	public function mailjet_secret_key_field() {
+
+		$field = require __DIR__ . '/templates/fields/smtp/mailjet-secret-key.php';
+		$field( $this );
+
+	}
+
+	/**
+	 * Mailjet Backend field.
+	 */
+	public function mailjet_backend_field() {
+
+		$field = require __DIR__ . '/templates/fields/smtp/mailjet-backend.php';
+		$field( $this );
+
+	}
+
+	/**
 	 * Test SMTP field.
 	 */
 	public function test_smtp_field() {
 
 		$field = require __DIR__ . '/templates/fields/test-smtp/test-smtp.php';
+		$field( $this );
+
+	}
+
+	/**
+	 * Mailjet API test field.
+	 */
+	public function mailjet_api_test_field() {
+
+		$field = require __DIR__ . '/templates/fields/mailjet-api/test-email.php';
 		$field( $this );
 
 	}

@@ -10,7 +10,7 @@ namespace Weed\Logs;
 defined( 'ABSPATH' ) || die( "Can't access directly" );
 
 use Weed\Base\Base_Module;
-use Weed\Settings\Settings_Module;
+use Weed\Vars;
 
 /**
  * Class to set up Logs module.
@@ -39,23 +39,11 @@ class Logs_Module extends Base_Module {
 	public $url;
 
 	/**
-	 * The current module url.
-	 *
-	 * @var string
-	 */
-	public $settings;
-
-	/**
 	 * Module constructor.
 	 */
 	public function __construct() {
 
-		parent::__construct();
-
-		$module = new Settings_Module();
-
-		$this->url      = WEED_PLUGIN_URL . '/modules/logs';
-		$this->settings = $module->settings;
+		$this->url = WEED_PLUGIN_URL . '/modules/logs';
 
 	}
 
@@ -79,7 +67,8 @@ class Logs_Module extends Base_Module {
 	 */
 	public function setup() {
 
-		$is_checked = isset( $this->settings['enable_email_logging'] ) ? 1 : 0;
+		$values     = Vars::get( 'values' );
+		$is_checked = isset( $values['enable_email_logging'] ) ? 1 : 0;
 
 		if ( ! $is_checked ) {
 			return;
@@ -170,7 +159,7 @@ class Logs_Module extends Base_Module {
 
 	/**
 	 * Hook into pre_wp_mail to capture email details before sending
-	 * 
+	 *
 	 * @param array $args The email details.
 	 */
 	public function capture_email_details_for_logging( $args ) {
@@ -205,7 +194,7 @@ class Logs_Module extends Base_Module {
 
 	/**
 	 * Action to handle successful emails.
-	 * 
+	 *
 	 * @param array $mail_data Server response.
 	 */
 	public function handle_success_email( $mail_data ) {
@@ -242,7 +231,7 @@ class Logs_Module extends Base_Module {
 
 	/**
 	 * Helper function to log email events
-	 * 
+	 *
 	 * @param string $status Email status.
 	 * @param string $server_response Server response.
 	 */
@@ -257,10 +246,10 @@ class Logs_Module extends Base_Module {
 
 		$sender = $email_log['sender'];
 
-		// Insert the email log as a custom post type entry
+		// Insert the email log as a custom post type entry.
 		$this->insert_email_log_post( $email_log, $sender, $status, $server_response );
 
-		// Clear the global variable after logging
+		// Clear the global variable after logging.
 		unset( $GLOBALS[ $this->log_global_var ] );
 
 	}
@@ -276,15 +265,15 @@ class Logs_Module extends Base_Module {
 
 	/**
 	 * Insert the email log as a custom post type entry
-	 * 
-	 * @param array $email_log Email log details.
+	 *
+	 * @param array  $email_log Email log details.
 	 * @param string $sender Sender email.
 	 * @param string $status Email status.
 	 * @param string $server_response Server response.
 	 */
 	protected function insert_email_log_post( $email_log, $sender, $status, $server_response ) {
 
-		wp_insert_post(array(
+		wp_insert_post( array(
 			'post_title'   => $email_log['subject'],
 			'post_type'    => 'weed_email_logs',
 			'post_status'  => 'publish',
@@ -297,7 +286,7 @@ class Logs_Module extends Base_Module {
 				'status'          => $status,
 				'server_response' => $server_response,
 			),
-		));
+		) );
 
 	}
 
@@ -306,11 +295,11 @@ class Logs_Module extends Base_Module {
 	 */
 	public function email_logs_detail_styles() {
 
-		// Get the current screen object
+		// Get the current screen object.
 		$screen = get_current_screen();
 
-		// Check if the current screen is related to the 'email_logs' post type
-		if ( $screen && $screen->id === 'weed_email_logs' ) {
+		// Check if the current screen is related to the 'email_logs' post type.
+		if ( 'weed_email_logs' === $screen && $screen->id ) {
 			wp_enqueue_style( 'email-logs-details', $this->url . '/assets/css/email-logs-detail.css', array(), WEED_PLUGIN_VERSION );
 		}
 
@@ -322,6 +311,11 @@ class Logs_Module extends Base_Module {
 	public function set_logs_capabilities() {
 
 		$role = get_role( 'administrator' );
+
+		if ( is_null( $role ) ) {
+			return;
+		}
+
 		$role->add_cap( 'edit_log' );
 		$role->add_cap( 'read_log' );
 		$role->add_cap( 'delete_log' );
@@ -332,5 +326,5 @@ class Logs_Module extends Base_Module {
 		$role->add_cap( 'read_private_logs' );
 
 	}
-	
+
 }

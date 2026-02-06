@@ -1,20 +1,20 @@
 <?php
 /**
- * The SMTP module class.
+ * The Mailjet API module class.
  *
  * @package Weed
  */
 
-namespace Weed\Smtp;
+namespace Weed\Mailjet_Api;
 
 defined( 'ABSPATH' ) || die( "Can't access directly" );
 
 use Weed\Base\Base_Module;
 
 /**
- * Class to set up SMTP module.
+ * Class to set up Mailjet API module.
  */
-class Smtp_Module extends Base_Module {
+class Mailjet_Api_Module extends Base_Module {
 
 	/**
 	 * The class instance.
@@ -35,7 +35,7 @@ class Smtp_Module extends Base_Module {
 	 */
 	public function __construct() {
 
-		$this->url = WEED_PLUGIN_URL . '/modules/smtp';
+		$this->url = WEED_PLUGIN_URL . '/modules/mailjet-api';
 
 	}
 
@@ -59,9 +59,8 @@ class Smtp_Module extends Base_Module {
 	 */
 	public function setup() {
 
-		// The module output.
-		require_once __DIR__ . '/class-smtp-output.php';
-		Smtp_Output::init();
+		// Load the Mailjet API sender class.
+		require_once __DIR__ . '/class-mailjet-api-sender.php';
 
 	}
 
