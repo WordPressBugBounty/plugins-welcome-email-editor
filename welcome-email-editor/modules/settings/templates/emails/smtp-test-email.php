@@ -1,3 +1,12 @@
+<?php
+/**
+ * Plain text test email.
+ *
+ * @package Welcome_Email_Editor
+ */
+
+defined( 'ABSPATH' ) || die( "Can't access directly" );
+?>
 CONGRATULATIONS
 Test email was sent successfully
 

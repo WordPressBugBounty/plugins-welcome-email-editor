@@ -7,67 +7,18 @@
 
 namespace Weed\Settings;
 
-use Weed\Base\Base_Output;
-use Weed\Helpers\Content_Helper;
 use Weed\Helpers\Email_Helper;
 use Weed\Vars;
-use WP_User;
 
 defined( 'ABSPATH' ) || die( "Can't access directly" );
 
 /**
- * Class to set up settings output.
+ * Applies the "From" & content type settings and the custom reset password email.
  */
-class Settings_Output extends Base_Output {
+class Settings_Output {
 
 	/**
-	 * The class instance.
-	 *
-	 * @var object
-	 */
-	public static $instance;
-
-	/**
-	 * The current module url.
-	 *
-	 * @var string
-	 */
-	public $url;
-
-	/**
-	 * Module constructor.
-	 */
-	public function __construct() {
-
-		$this->url = WEED_PLUGIN_URL . '/modules/settings';
-
-	}
-
-	/**
-	 * Get instance of the class.
-	 */
-	public static function get_instance() {
-
-		if ( null === self::$instance ) {
-			self::$instance = new self();
-		}
-
-		return self::$instance;
-
-	}
-
-	/**
-	 * Init the class setup.
-	 */
-	public static function init() {
-
-		$class = new self();
-		$class->setup();
-
-	}
-
-	/**
-	 * Setup settings output.
+	 * Set up the hooks.
 	 */
 	public function setup() {
 
@@ -92,9 +43,9 @@ class Settings_Output extends Base_Output {
 	 *
 	 * @see https://developer.wordpress.org/reference/hooks/retrieve_password_title/
 	 *
-	 * @param string  $title Email subject.
-	 * @param string  $user_login The username for the user.
-	 * @param WP_User $user_data WP_User object.
+	 * @param string   $title Email subject.
+	 * @param string   $user_login The username for the user.
+	 * @param \WP_User $user_data WP_User object.
 	 *
 	 * @return string
 	 */
@@ -108,23 +59,7 @@ class Settings_Output extends Base_Output {
 			return $title;
 		}
 
-		// The blogname option is escaped with esc_html() on the way into the database in sanitize_option().
-		// We want to reverse this for the plain text arena of emails.
-		$blogname = wp_specialchars_decode( get_option( 'blogname' ), ENT_QUOTES );
-
-		$content_helper = new Content_Helper();
-
-		$content = $content_helper->replace_content(
-			array(
-				'[blog_name]'  => $blogname,
-				'[user_login]' => $user_login,
-				'[first_name]' => $user_data->first_name,
-				'[last_name]'  => $user_data->last_name,
-			),
-			$saved_title
-		);
-
-		return $content_helper->replace_conditional_placeholders( $content );
+		return ( new Email_Helper() )->replace_tags( $saved_title, $user_data );
 
 	}
 
@@ -153,10 +88,10 @@ class Settings_Output extends Base_Output {
 	/**
 	 * Retrieve password message.
 	 *
-	 * @param string  $message Email message.
-	 * @param string  $key The activation key.
-	 * @param string  $user_login The user login.
-	 * @param WP_User $user_data WP_User object.
+	 * @param string   $message Email message.
+	 * @param string   $key The activation key.
+	 * @param string   $user_login The user login.
+	 * @param \WP_User $user_data WP_User object.
 	 *
 	 * @return string
 	 */
@@ -170,12 +105,6 @@ class Settings_Output extends Base_Output {
 			return $message;
 		}
 
-		$site_url = get_site_url();
-
-		// The blogname option is escaped with esc_html() on the way into the database in sanitize_option().
-		// We want to reverse this for the plain text arena of emails.
-		$blogname = wp_specialchars_decode( get_option( 'blogname' ), ENT_QUOTES );
-
 		// Use add_query_arg() to build the reset URL.
 		$reset_url = add_query_arg(
 			array(
@@ -186,23 +115,15 @@ class Settings_Output extends Base_Output {
 			wp_login_url()
 		);
 
-		$content_helper = new Content_Helper();
-
-		$content = $content_helper->replace_content(
+		return ( new Email_Helper() )->replace_tags(
+			$saved_message,
+			$user_data,
 			array(
-				'[blog_name]'      => $blogname,
-				'[site_url]'       => $site_url,
+				'[site_url]'       => get_site_url(),
 				'[reset_url]'      => $reset_url, // Deprecated, this is here for compatibility purpose.
 				'[reset_pass_url]' => $reset_url,
-				'[user_login]'     => $user_login,
-				'[first_name]'     => $user_data->first_name,
-				'[last_name]'      => $user_data->last_name,
-				'[user_ip]'        => isset( $_SERVER['REMOTE_ADDR'] ) ? sanitize_text_field( $_SERVER['REMOTE_ADDR'] ) : '',
-			),
-			$saved_message
+			)
 		);
-
-		return $content_helper->replace_conditional_placeholders( $content );
 
 	}
 
@@ -215,7 +136,7 @@ class Settings_Output extends Base_Output {
 	 * @param string $password User password.
 	 * @param array  $meta Signup meta data. Default empty array.
 	 */
-	public function wpmu_new_user_notification( $user_id, $password, $meta = array() ) {
+	public function wpmu_new_user_notification( $user_id, $password, $meta = array() ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.FoundAfterLastUsed -- Filter signature.
 
 		// This function call doesn't return anything.
 		wp_new_user_notification( $user_id, null, 'both' );
@@ -238,30 +159,6 @@ class Settings_Output extends Base_Output {
 
 		if ( $values['from_name'] ) {
 			add_filter( 'wp_mail_from_name', array( $this, 'from_name' ) );
-		}
-
-	}
-
-	/**
-	 * Reset email http headers.
-	 *
-	 * @return void
-	 */
-	public function reset_email_headers() {
-
-		$values = Vars::get( 'values' );
-
-		if ( $values['from_email'] ) {
-			remove_filter( 'wp_mail_from', array( $this, 'from_email' ) );
-		}
-
-		if ( $values['from_name'] ) {
-			remove_filter( 'wp_mail_from_name', array( $this, 'from_name' ) );
-		}
-
-		if ( 'html' === $values['content_type'] ) {
-			remove_filter( 'wp_mail_content_type', array( $this, 'html_content_type' ) );
-			remove_filter( 'wp_mail_charset', array( $this, 'charset' ) );
 		}
 
 	}
@@ -303,7 +200,10 @@ class Settings_Output extends Base_Output {
 			$admin_email,
 		);
 
-		return str_ireplace( $find, $replace, $values['from_email'] );
+		$custom_from_email = trim( str_ireplace( $find, $replace, $values['from_email'] ) );
+
+		// A typo in the setting would make every email fail ("Invalid address"): keep the original sender then.
+		return is_email( $custom_from_email ) ? $custom_from_email : $from_email;
 
 	}
 
@@ -351,7 +251,7 @@ class Settings_Output extends Base_Output {
 	 *
 	 * @param string $content_type The current content type.
 	 */
-	public function html_content_type( $content_type ) {
+	public function html_content_type( $content_type ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- Filter signature.
 
 		return 'text/html';
 
@@ -362,7 +262,7 @@ class Settings_Output extends Base_Output {
 	 *
 	 * @param string $charset The current charset.
 	 */
-	public function charset( $charset ) {
+	public function charset( $charset ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- Filter signature.
 
 		return get_bloginfo( 'charset' );
 

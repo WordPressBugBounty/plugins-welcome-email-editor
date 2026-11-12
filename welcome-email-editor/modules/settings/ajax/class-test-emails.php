@@ -7,38 +7,40 @@
 
 namespace Weed\Settings\Ajax;
 
+use Weed\Mailjet_Api\Mailjet_Api_Sender;
 use Weed\Vars;
 
 defined( 'ABSPATH' ) || die( "Can't access directly" );
 
 /**
- * Class to handle ajax request to test emails.
+ * Sends the test emails from the settings page.
  */
 class Test_Emails {
 
 	/**
 	 * The class instance.
 	 *
-	 * @var object
+	 * @var self
 	 */
 	public static $instance;
 
 	/**
-	 * The email type.
+	 * Email types and their nonce actions.
 	 *
-	 * @var string
+	 * @var array
 	 */
-	public $email_type;
+	private $email_types = array(
+		'admin_new_user_notif_email' => '_Admin_Welcome_Email',
+		'user_welcome_email'         => '_User_Welcome_Email',
+		'reset_password_email'       => '_Reset_Password_Email',
+		'test_smtp_email'            => '_Test_SMTP_Email',
+		'test_mailjet_api_email'     => '_Test_Mailjet_API_Email',
+	);
 
 	/**
-	 * The nonce.
+	 * Get the instance of the class.
 	 *
-	 * @var string
-	 */
-	public $nonce;
-
-	/**
-	 * Get instance of the class.
+	 * @return self
 	 */
 	public static function get_instance() {
 
@@ -55,40 +57,37 @@ class Test_Emails {
 	 */
 	public function ajax_handler() {
 
-		$this->email_type = isset( $_POST['email_type'] ) ? sanitize_text_field( $_POST['email_type'] ) : '';
-		$this->nonce      = isset( $_POST['nonce'] ) ? sanitize_text_field( $_POST['nonce'] ) : '';
+		$email_type = isset( $_POST['email_type'] ) ? sanitize_key( wp_unslash( $_POST['email_type'] ) ) : '';
 
-		$capability = apply_filters( 'weed_settings_capability', 'manage_options' );
-
-		if ( ! current_user_can( $capability ) ) {
-			wp_send_json_error( 'You do not have permission to do this', 'welcome-email-editor' );
+		if ( ! current_user_can( apply_filters( 'weed_settings_capability', 'manage_options' ) ) ) {
+			wp_send_json_error( __( 'You are not allowed to do this.', 'welcome-email-editor' ), 403 );
 		}
 
-		if ( ! $this->email_type ) {
-			wp_send_json_error( 'Email type is required', 'welcome-email-editor' );
+		if ( ! isset( $this->email_types[ $email_type ] ) ) {
+			wp_send_json_error( __( 'Unknown email type.', 'welcome-email-editor' ), 400 );
 		}
 
-		if ( ! $this->nonce ) {
-			wp_send_json_error( 'Invalid nonce', 'welcome-email-editor' );
-		}
+		check_ajax_referer( WEED_PLUGIN_DIR . $this->email_types[ $email_type ], 'nonce' );
 
-		if ( ! $this->verify_nonce() ) {
-			wp_send_json_error( 'Invalid nonce', 'welcome-email-editor' );
-		}
+		// Errors of earlier emails in this request don't count.
+		Vars::set( 'wp_mail_failed', '' );
 
+		// The welcome & reset password emails go to the current user only.
 		add_filter( 'weed_test_email_recipient', array( $this, 'set_testing_recipient' ) );
 
-		switch ( $this->email_type ) {
+		switch ( $email_type ) {
 			case 'admin_new_user_notif_email':
-				$this->admin_new_user_notif_email();
+				wp_new_user_notification( get_current_user_id(), null, 'admin' );
+				$this->send_result( true );
 				break;
 
 			case 'user_welcome_email':
-				$this->user_welcome_email();
+				wp_new_user_notification( get_current_user_id(), null, 'user' );
+				$this->send_result( true );
 				break;
 
 			case 'reset_password_email':
-				$this->reset_password_email();
+				$this->send_result( retrieve_password( wp_get_current_user()->user_login ) );
 				break;
 
 			case 'test_smtp_email':
@@ -100,177 +99,97 @@ class Test_Emails {
 				break;
 		}
 
-		remove_filter( 'weed_test_email_recipient', array( $this, 'set_testing_recipient' ) );
-
 	}
 
 	/**
-	 * Verify nonce.
+	 * Send the result of a test email back to the settings page.
 	 *
-	 * @return bool
+	 * @param bool|\WP_Error $result Whether the email was sent.
 	 */
-	private function verify_nonce() {
-
-		$nonce_action = '';
-
-		switch ( $this->email_type ) {
-			case 'admin_new_user_notif_email':
-				$nonce_action = WEED_PLUGIN_DIR . '_Admin_Welcome_Email';
-				break;
-
-			case 'user_welcome_email':
-				$nonce_action = WEED_PLUGIN_DIR . '_User_Welcome_Email';
-				break;
-
-			case 'reset_password_email':
-				$nonce_action = WEED_PLUGIN_DIR . '_Reset_Password_Email';
-				break;
-
-			case 'test_smtp_email':
-				$nonce_action = WEED_PLUGIN_DIR . '_Test_SMTP_Email';
-				break;
-
-			case 'test_mailjet_api_email':
-				$nonce_action = WEED_PLUGIN_DIR . '_Test_Mailjet_API_Email';
-				break;
-		}
-
-		$is_valid = wp_verify_nonce( $this->nonce, $nonce_action );
-
-		return (bool) $is_valid;
-
-	}
-
-	/**
-	 * Test admin's welcome email.
-	 */
-	public function admin_new_user_notif_email() {
-
-		$current_user = wp_get_current_user();
-
-		wp_new_user_notification( $current_user->ID, null, 'admin' );
+	private function send_result( $result ) {
 
 		$error_msg = Vars::get( 'wp_mail_failed' );
 
-		if ( $error_msg ) {
-			wp_send_json_error( $error_msg );
+		if ( is_wp_error( $result ) ) {
+			$error_msg = $result->get_error_message();
 		}
 
-		wp_send_json_success( __( 'Email has been sent successfully', 'welcome-email-editor' ) );
+		if ( $error_msg || ! $result ) {
+			wp_send_json_error( $error_msg ? $error_msg : __( 'The email could not be sent.', 'welcome-email-editor' ) );
+		}
+
+		wp_send_json_success( __( 'Email has been sent successfully.', 'welcome-email-editor' ) );
 
 	}
 
 	/**
-	 * Test user's welcome email.
+	 * The recipient of the SMTP / Mailjet test email.
+	 *
+	 * @return string
 	 */
-	public function user_welcome_email() {
+	private function test_recipient() {
 
-		$current_user = wp_get_current_user();
+		$recipient = isset( $_POST['to_email'] ) ? sanitize_email( wp_unslash( $_POST['to_email'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Checked in ajax_handler().
 
-		wp_new_user_notification( $current_user->ID, null, 'user' );
-
-		$error_msg = Vars::get( 'wp_mail_failed' );
-
-		if ( $error_msg ) {
-			wp_send_json_error( $error_msg );
+		if ( ! is_email( $recipient ) ) {
+			wp_send_json_error( __( 'Please enter a valid email address.', 'welcome-email-editor' ) );
 		}
 
-		wp_send_json_success( __( 'Email has been sent successfully', 'welcome-email-editor' ) );
+		return $recipient;
 
 	}
 
 	/**
-	 * Test reset password email.
+	 * The body of the SMTP / Mailjet test email.
+	 *
+	 * @return string
 	 */
-	public function reset_password_email() {
+	private function test_body() {
 
-		$current_user = wp_get_current_user();
+		$values = Vars::get( 'values' );
+		$suffix = isset( $values['content_type'] ) && 'html' === $values['content_type'] ? '-html' : '';
 
-		retrieve_password( $current_user->user_login );
+		ob_start();
+		require WEED_PLUGIN_DIR . '/modules/settings/templates/emails/smtp-test' . $suffix . '-email.php';
 
-		$error_msg = Vars::get( 'wp_mail_failed' );
-
-		if ( $error_msg ) {
-			wp_send_json_error( $error_msg );
-		}
-
-		wp_send_json_success( __( 'Email has been sent successfully', 'welcome-email-editor' ) );
+		return ob_get_clean();
 
 	}
 
 	/**
-	 * Test email.
+	 * Send the SMTP test email.
 	 */
 	public function test_smtp_email() {
 
-		$admin_email = get_bloginfo( 'admin_email' );
-		$recipient   = isset( $_POST['to_email'] ) ? sanitize_text_field( wp_unslash( $_POST['to_email'] ) ) : $admin_email;
+		$recipient = $this->test_recipient();
 
-		$values = Vars::get( 'values' );
-
-		$content_type = isset( $values['content_type'] ) ? $values['content_type'] : 'text';
-
-		$subject = __( 'Swift SMTP: Test Email', 'welcome-email-editor' );
-
-		ob_start();
-		require WEED_PLUGIN_DIR . '/modules/settings/templates/emails/smtp-test' . ( $content_type === 'html' ? '-' . $content_type : '' ) . '-email.php';
-		$body = ob_get_clean();
-
-		wp_mail( $recipient, $subject, $body );
-
-		$error_msg = Vars::get( 'wp_mail_failed' );
-
-		if ( $error_msg ) {
-			wp_send_json_error( $error_msg );
-		}
-
-		wp_send_json_success( __( 'Email has been sent successfully', 'welcome-email-editor' ) );
+		$this->send_result( wp_mail( $recipient, __( 'Swift SMTP: Test Email', 'welcome-email-editor' ), $this->test_body() ) );
 
 	}
 
 	/**
-	 * Test Mailjet API email.
+	 * Send the Mailjet API test email (straight through the API, without the SMTP fallback).
 	 */
 	public function test_mailjet_api_email() {
 
-		$admin_email = get_bloginfo( 'admin_email' );
-		$recipient   = isset( $_POST['to_email'] ) ? sanitize_text_field( wp_unslash( $_POST['to_email'] ) ) : $admin_email;
+		$recipient = $this->test_recipient();
 
-		$values = Vars::get( 'values' );
+		require_once WEED_PLUGIN_DIR . '/modules/mailjet-api/class-mailjet-api-sender.php';
 
-		$content_type = isset( $values['content_type'] ) ? $values['content_type'] : 'text';
+		$result = Mailjet_Api_Sender::get_instance()->send_email( $recipient, __( 'Swift SMTP: Mailjet API Test Email', 'welcome-email-editor' ), $this->test_body() );
 
-		$subject = __( 'Swift SMTP: Mailjet API Test Email', 'welcome-email-editor' );
-
-		ob_start();
-		require WEED_PLUGIN_DIR . '/modules/settings/templates/emails/smtp-test' . ( $content_type === 'html' ? '-' . $content_type : '' ) . '-email.php';
-		$body = ob_get_clean();
-
-		// Use Mailjet API sender directly.
-		$mailjet_sender = \Weed\Mailjet_Api\Mailjet_Api_Sender::get_instance();
-		$result         = $mailjet_sender->send_email( $recipient, $subject, $body );
-
-		if ( ! $result ) {
-			$error_msg = Vars::get( 'wp_mail_failed' );
-			wp_send_json_error( $error_msg ? $error_msg : __( 'Failed to send test email via Mailjet API', 'welcome-email-editor' ) );
-		}
-
-		wp_send_json_success( __( 'Email has been sent successfully via Mailjet API', 'welcome-email-editor' ) );
+		$this->send_result( $result );
 
 	}
 
-
-
 	/**
-	 * Set custom recipient for testing emails.
+	 * The current user receives the test emails.
 	 *
 	 * @return string
 	 */
 	public function set_testing_recipient() {
 
-		$current_user = wp_get_current_user();
-
-		return $current_user->user_email;
+		return wp_get_current_user()->user_email;
 
 	}
 

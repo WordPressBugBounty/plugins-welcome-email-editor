@@ -46,7 +46,7 @@ defined( 'ABSPATH' ) || die( "Can't access directly" );
 	<![endif]-->
 
 	<!--[if !mso]>
-	<link href="https://fonts.googleapis.com/css?family=Roboto:400,400i,700,700i" rel="stylesheet">
+	<link href="https://fonts.googleapis.com/css?family=Roboto:400,400i,700,700i" rel="stylesheet"> <?php // phpcs:ignore WordPress.WP.EnqueuedResources.NonEnqueuedStylesheet -- Email template. ?>
 	<!--<![endif]-->
 
 	<style type="text/css">

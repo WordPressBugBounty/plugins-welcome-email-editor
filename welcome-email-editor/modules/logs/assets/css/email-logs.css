@@ -1,0 +1,156 @@
+/* Email logs: list and detail screens. */
+
+.weed-status-badge {
+	display: inline-block;
+	padding: 2px 10px;
+	border-radius: 999px;
+	font-size: 12px;
+	font-weight: 600;
+	line-height: 1.6;
+}
+
+.weed-status-badge.is-success {
+	color: #00704a;
+	background-color: #e5f5ee;
+}
+
+.weed-status-badge.is-error {
+	color: #b32d2e;
+	background-color: #fcf0f1;
+}
+
+.weed-email-log-details th {
+	width: 160px;
+}
+
+.weed-email-log-message {
+	display: block;
+	box-sizing: border-box;
+	width: 100%;
+	max-width: 800px;
+	border: 1px solid #dcdcde;
+	border-radius: 8px;
+	background-color: #fff;
+}
+
+iframe.weed-email-log-message {
+	height: 480px;
+}
+
+.weed-email-log-message.is-text {
+	padding: 12px 16px;
+	white-space: pre-wrap;
+	word-break: break-word;
+}
+
+.weed-delete-log.button {
+	color: #b32d2e;
+	border-color: #b32d2e;
+}
+
+.weed-delete-log.button:hover,
+.weed-delete-log.button:focus {
+	color: #fff;
+	background-color: #b32d2e;
+	border-color: #b32d2e;
+}
+
+.post-type-weed_email_logs .column-status {
+	width: 110px;
+}
+
+/* Overview: sent vs. failed, above the list. Same look as the settings page's boxes (heatbox). */
+.weed-logs-overview {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 16px;
+	max-width: 760px;
+	margin: 16px 0 8px;
+}
+
+.weed-logs-overview-period {
+	padding: 16px 20px;
+	border: 1px solid #e2e4e7;
+	border-radius: 8px;
+	background-color: #fff;
+	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 12px 32px -16px rgba(0, 0, 0, 0.14);
+}
+
+.weed-logs-overview-head {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 12px;
+	margin-bottom: 12px;
+}
+
+.weed-logs-overview-head h2 {
+	margin: 0;
+	font-size: 14px;
+	font-weight: 600;
+	color: #1e1e1e;
+}
+
+.weed-logs-overview-rate {
+	font-size: 20px;
+	font-weight: 600;
+	color: #00a32a;
+}
+
+.weed-logs-overview-rate.has-failed {
+	color: #1e1e1e;
+}
+
+.weed-logs-overview-bar {
+	display: flex;
+	height: 8px;
+	overflow: hidden;
+	border-radius: 999px;
+	background-color: #f0f0f1;
+}
+
+.weed-logs-overview-bar .is-success {
+	background-color: #00a32a;
+}
+
+.weed-logs-overview-bar .is-error {
+	background-color: #d63638;
+}
+
+.weed-logs-overview-legend {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px 16px;
+	margin: 10px 0 0;
+	color: #646970;
+}
+
+.weed-logs-overview-legend .is-success::before,
+.weed-logs-overview-legend .is-error::before,
+.weed-logs-overview-legend .is-none::before {
+	content: "";
+	display: inline-block;
+	width: 8px;
+	height: 8px;
+	margin-inline-end: 6px;
+	border-radius: 50%;
+	background-color: #00a32a;
+}
+
+.weed-logs-overview-legend .is-error {
+	color: #d63638;
+}
+
+.weed-logs-overview-legend .is-error::before {
+	background-color: #d63638;
+}
+
+.weed-logs-overview-legend .is-none::before {
+	background-color: #c3c4c7;
+}
+
+@media screen and (max-width: 600px) {
+	.weed-logs-overview {
+		grid-template-columns: 1fr;
+	}
+}

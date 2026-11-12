@@ -1,38 +1,44 @@
 <?php
 /**
- * The Logging module class.
+ * Email logs module.
  *
- * @package Weed
+ * @package Welcome_Email_Editor
  */
 
 namespace Weed\Logs;
 
 defined( 'ABSPATH' ) || die( "Can't access directly" );
 
-use Weed\Base\Base_Module;
 use Weed\Vars;
 
 /**
- * Class to set up Logs module.
+ * Records every outgoing email when "Email Logging" is enabled.
  */
-class Logs_Module extends Base_Module {
+class Logs_Module {
 
 	/**
-	 * The global variable name for storing current email log details.
+	 * The global variable name for storing the current email's details.
 	 *
 	 * @var string
 	 */
-	public $log_global_var = 'weed_current_email_log';
+	const LOG_GLOBAL_VAR = 'weed_current_email_log';
 
 	/**
-	 * The class instance.
+	 * The daily cron event that deletes old logs.
 	 *
-	 * @var self
+	 * @var string
 	 */
-	public static $instance;
+	const CLEANUP_HOOK = 'weed_delete_old_email_logs';
 
 	/**
-	 * The current module url.
+	 * Same as LOG_GLOBAL_VAR, kept for code that reads the property.
+	 *
+	 * @var string
+	 */
+	public $log_global_var = self::LOG_GLOBAL_VAR;
+
+	/**
+	 * The module url.
 	 *
 	 * @var string
 	 */
@@ -48,49 +54,95 @@ class Logs_Module extends Base_Module {
 	}
 
 	/**
-	 * Get instance of the class.
-	 *
-	 * @return self
-	 */
-	public static function get_instance() {
-
-		if ( null === self::$instance ) {
-			self::$instance = new self();
-		}
-
-		return self::$instance;
-
-	}
-
-	/**
 	 * Set up the module.
 	 */
 	public function setup() {
 
-		$values     = Vars::get( 'values' );
-		$is_checked = isset( $values['enable_email_logging'] ) ? 1 : 0;
+		$values = Vars::get( 'values' );
 
-		if ( ! $is_checked ) {
+		add_action( self::CLEANUP_HOOK, array( $this, 'delete_old_logs' ) );
+		add_action( 'init', array( $this, 'schedule_cleanup' ) );
+
+		if ( empty( $values['enable_email_logging'] ) ) {
 			return;
 		}
 
 		add_action( 'init', array( $this, 'register_email_logs_cpt' ), 20 );
 		add_action( 'admin_menu', array( $this, 'email_logs_submenu' ), 20 );
-		add_filter( 'wp_mail', array( $this, 'capture_email_details_for_logging' ), 10, 2 );
-		add_action( 'phpmailer_init', array( $this, 'capture_email_sender' ), 10, 1 );
+		add_filter( 'wp_mail', array( $this, 'capture_email_details_for_logging' ) );
+		add_action( 'phpmailer_init', array( $this, 'capture_email_sender' ) );
 		add_action( 'wp_mail_succeeded', array( $this, 'handle_success_email' ) );
 		add_action( 'wp_mail_failed', array( $this, 'handle_failed_email' ) );
-		add_action( 'admin_enqueue_scripts', array( $this, 'email_logs_detail_styles' ) );
+		add_action( 'admin_enqueue_scripts', array( $this, 'email_logs_styles' ) );
 		add_action( 'admin_init', array( $this, 'set_logs_capabilities' ) );
 
-		// The module output.
 		require_once __DIR__ . '/class-logs-output.php';
-		Logs_Output::init();
+
+		( new Logs_Output() )->setup();
 
 	}
 
 	/**
-	 * Register a Custom Post Type for Email Logs
+	 * Run the daily cleanup of old logs while logging is on and logs expire.
+	 */
+	public function schedule_cleanup() {
+
+		$values    = Vars::get( 'values' );
+		$needed    = ! empty( $values['enable_email_logging'] ) && ! empty( $values['email_logs_retention_days'] );
+		$scheduled = wp_next_scheduled( self::CLEANUP_HOOK );
+
+		if ( $needed && ! $scheduled ) {
+			wp_schedule_event( time() + HOUR_IN_SECONDS, 'daily', self::CLEANUP_HOOK );
+		} elseif ( ! $needed && $scheduled ) {
+			wp_clear_scheduled_hook( self::CLEANUP_HOOK );
+		}
+
+	}
+
+	/**
+	 * Delete logs older than the "Keep Logs For" setting.
+	 */
+	public function delete_old_logs() {
+
+		$values = Vars::get( 'values' );
+		$days   = isset( $values['email_logs_retention_days'] ) ? absint( $values['email_logs_retention_days'] ) : 0;
+
+		if ( ! $days ) {
+			return;
+		}
+
+		// In batches, so a site with many old logs doesn't time out. The next run continues.
+		for ( $batch = 0; $batch < 10; $batch++ ) {
+			$log_ids = get_posts(
+				array(
+					'post_type'        => 'weed_email_logs',
+					'post_status'      => 'any',
+					'fields'           => 'ids',
+					'numberposts'      => 100,
+					'orderby'          => 'date',
+					'order'            => 'ASC',
+					'suppress_filters' => true,
+					'date_query'       => array(
+						array(
+							'before' => $days . ' days ago',
+						),
+					),
+				)
+			);
+
+			foreach ( $log_ids as $log_id ) {
+				wp_delete_post( $log_id, true );
+			}
+
+			if ( count( $log_ids ) < 100 ) {
+				break;
+			}
+		}
+
+	}
+
+	/**
+	 * Register the post type that holds the email logs.
 	 */
 	public function register_email_logs_cpt() {
 
@@ -99,10 +151,7 @@ class Logs_Module extends Base_Module {
 			'singular_name'      => _x( 'Email Log', 'post type singular name', 'welcome-email-editor' ),
 			'menu_name'          => _x( 'Email Logs', 'admin menu', 'welcome-email-editor' ),
 			'name_admin_bar'     => _x( 'Email Log', 'add new on admin bar', 'welcome-email-editor' ),
-			'add_new'            => _x( 'Add New', 'email log', 'welcome-email-editor' ),
-			'add_new_item'       => __( 'Add New Email Log', 'welcome-email-editor' ),
-			'new_item'           => __( 'New Email Log', 'welcome-email-editor' ),
-			'edit_item'          => __( 'Edit Email Log', 'welcome-email-editor' ),
+			'edit_item'          => __( 'Email Log', 'welcome-email-editor' ),
 			'view_item'          => __( 'View Email Log', 'welcome-email-editor' ),
 			'all_items'          => __( 'All Email Logs', 'welcome-email-editor' ),
 			'search_items'       => __( 'Search Email Logs', 'welcome-email-editor' ),
@@ -119,38 +168,39 @@ class Logs_Module extends Base_Module {
 			'delete_posts'       => 'delete_logs',
 			'publish_posts'      => 'publish_logs',
 			'read_private_posts' => 'read_private_logs',
-			'create_posts'       => 'edit_logs',
+			// Logs are only created by the plugin.
+			'create_posts'       => 'do_not_allow',
 		);
 
-		$args = array(
-			'labels'          => $labels,
-			'public'          => false,
-			'show_ui'         => true,
-			'show_in_menu'    => false,
-			'query_var'       => true,
-			'rewrite'         => array( 'slug' => 'weed_email_log' ),
-			'capability_type' => array( 'log', 'logs' ),
-			'capabilities'    => $capabilities,
-			'map_meta_cap'    => false,
-			'has_archive'     => false,
-			'hierarchical'    => false,
-			'menu_position'   => null,
-			'supports'        => array( 'title', 'editor' ),
+		register_post_type(
+			'weed_email_logs',
+			array(
+				'labels'          => $labels,
+				'public'          => false,
+				'show_ui'         => true,
+				'show_in_menu'    => false,
+				'query_var'       => false,
+				'rewrite'         => false,
+				'capability_type' => array( 'log', 'logs' ),
+				'capabilities'    => $capabilities,
+				'map_meta_cap'    => false,
+				'has_archive'     => false,
+				'hierarchical'    => false,
+				'supports'        => false,
+			)
 		);
-
-		register_post_type( 'weed_email_logs', $args );
 
 	}
 
 	/**
-	 * Add email logs as sub menu of the SMTP settings.
+	 * Add "Email Logs" below the Swift SMTP menu.
 	 */
 	public function email_logs_submenu() {
 
 		add_submenu_page(
 			'weed_settings',
-			'Email Logs',
-			'Email Logs',
+			__( 'Email Logs', 'welcome-email-editor' ),
+			__( 'Email Logs', 'welcome-email-editor' ),
 			'manage_options',
 			'edit.php?post_type=weed_email_logs'
 		);
@@ -158,18 +208,21 @@ class Logs_Module extends Base_Module {
 	}
 
 	/**
-	 * Hook into pre_wp_mail to capture email details before sending
+	 * Remember the email's details before it's sent.
 	 *
-	 * @param array $args The email details.
+	 * @param array $args The wp_mail() arguments.
+	 *
+	 * @return array
 	 */
 	public function capture_email_details_for_logging( $args ) {
 
 		$GLOBALS[ $this->log_global_var ] = array(
-			'subject'     => $args['subject'],
-			'email_body'  => $args['message'],
-			'recipient'   => is_array( $args['to'] ) ? implode( ', ', $args['to'] ) : $args['to'],
-			'headers'     => $args['headers'],
-			'attachments' => $args['attachments'],
+			'subject'     => isset( $args['subject'] ) ? $args['subject'] : '',
+			'email_body'  => isset( $args['message'] ) ? $args['message'] : '',
+			'recipient'   => isset( $args['to'] ) ? ( is_array( $args['to'] ) ? implode( ', ', $args['to'] ) : $args['to'] ) : '',
+			'headers'     => isset( $args['headers'] ) ? $args['headers'] : '',
+			'attachments' => isset( $args['attachments'] ) ? $args['attachments'] : array(),
+			'sender'      => '',
 		);
 
 		return $args;
@@ -177,153 +230,102 @@ class Logs_Module extends Base_Module {
 	}
 
 	/**
-	 * Action to handle successful emails.
+	 * Remember the sender.
 	 *
-	 * @param object $phpmailer The PHPMailer object.
+	 * @param \PHPMailer\PHPMailer\PHPMailer $phpmailer The PHPMailer instance.
 	 */
 	public function capture_email_sender( $phpmailer ) {
 
-		// Get the 'From' email
-		$from_email = $phpmailer->From;
-
 		if ( isset( $GLOBALS[ $this->log_global_var ] ) ) {
-			$GLOBALS[ $this->log_global_var ]['sender'] = $from_email;
+			$GLOBALS[ $this->log_global_var ]['sender'] = $phpmailer->From; // phpcs:ignore WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase -- PHPMailer property.
 		}
 
 	}
 
 	/**
-	 * Action to handle successful emails.
-	 *
-	 * @param array $mail_data Server response.
+	 * Log a sent email.
 	 */
-	public function handle_success_email( $mail_data ) {
+	public function handle_success_email() {
 
-		if ( isset( $GLOBALS[ $this->log_global_var ] ) ) {
-			// Assuming $mail_data or another global variable contains the server response
-			// Initialize an empty response
-			$server_response = 'Email sent successfully.';
-
-			// Log the email with success status and the server response
-			$this->log_email_event( 'Success', $server_response );
-			unset( $GLOBALS[ $this->log_global_var ] );
-
-		}
+		$this->log_email_event( 'Success', __( 'Email sent successfully.', 'welcome-email-editor' ) );
 
 	}
 
 	/**
-	 * Hook into the wp_mail_failed action to handle email failures
+	 * Log a failed email.
 	 *
-	 * @param object $wp_error The WP_Error object.
+	 * @param \WP_Error $wp_error The error.
 	 */
 	public function handle_failed_email( $wp_error ) {
 
-		if ( isset( $GLOBALS[ $this->log_global_var ] ) ) {
-			$server_response = $wp_error->get_error_message();
+		$this->log_email_event( 'Failed', $wp_error->get_error_message() );
 
-			// Log the email as failed
-			$this->log_email_event( 'Failed', $server_response );
-			unset( $GLOBALS[ $this->log_global_var ] );
-
-		}
 	}
 
 	/**
-	 * Helper function to log email events
+	 * Save the current email as a log entry.
 	 *
-	 * @param string $status Email status.
+	 * @param string $status          "Success" or "Failed".
 	 * @param string $server_response Server response.
 	 */
 	public function log_email_event( $status, $server_response = '' ) {
 
-		$email_log = $this->get_current_email_log();
-
-		// If no email log data exists, do nothing
-		if ( ! $email_log ) {
+		if ( ! isset( $GLOBALS[ $this->log_global_var ] ) ) {
 			return;
 		}
 
-		$sender = $email_log['sender'];
+		$email_log = $GLOBALS[ $this->log_global_var ];
 
-		// Insert the email log as a custom post type entry.
-		$this->insert_email_log_post( $email_log, $sender, $status, $server_response );
-
-		// Clear the global variable after logging.
 		unset( $GLOBALS[ $this->log_global_var ] );
 
-	}
-
-	/**
-	 * Retrieve current email log from the global variable
-	 */
-	protected function get_current_email_log() {
-
-		return isset( $GLOBALS[ $this->log_global_var ] ) ? $GLOBALS[ $this->log_global_var ] : false;
-
-	}
-
-	/**
-	 * Insert the email log as a custom post type entry
-	 *
-	 * @param array  $email_log Email log details.
-	 * @param string $sender Sender email.
-	 * @param string $status Email status.
-	 * @param string $server_response Server response.
-	 */
-	protected function insert_email_log_post( $email_log, $sender, $status, $server_response ) {
-
-		wp_insert_post( array(
-			'post_title'   => $email_log['subject'],
-			'post_type'    => 'weed_email_logs',
-			'post_status'  => 'publish',
-			'post_content' => $email_log['email_body'],
-			'post_date'    => current_time( 'mysql' ),
-			'meta_input'   => array(
-				'subject'         => $email_log['subject'],
-				'sender'          => $sender,
-				'recipient'       => $email_log['recipient'],
-				'status'          => $status,
-				'server_response' => $server_response,
-			),
-		) );
+		// wp_insert_post() expects slashed data.
+		wp_insert_post(
+			wp_slash(
+				array(
+					'post_title'   => $email_log['subject'],
+					'post_type'    => 'weed_email_logs',
+					'post_status'  => 'publish',
+					'post_content' => $email_log['email_body'],
+					'meta_input'   => array(
+						'subject'         => $email_log['subject'],
+						'sender'          => $email_log['sender'],
+						'recipient'       => $email_log['recipient'],
+						'status'          => $status,
+						'server_response' => $server_response,
+					),
+				)
+			)
+		);
 
 	}
 
 	/**
-	 * Enqueue email logs details styles.
+	 * Load the styles on the email logs screens.
 	 */
-	public function email_logs_detail_styles() {
+	public function email_logs_styles() {
 
-		// Get the current screen object.
 		$screen = get_current_screen();
 
-		// Check if the current screen is related to the 'email_logs' post type.
-		if ( 'weed_email_logs' === $screen && $screen->id ) {
-			wp_enqueue_style( 'email-logs-details', $this->url . '/assets/css/email-logs-detail.css', array(), WEED_PLUGIN_VERSION );
+		if ( $screen && 'weed_email_logs' === $screen->post_type ) {
+			wp_enqueue_style( 'weed-email-logs', $this->url . '/assets/css/email-logs.css', array(), WEED_PLUGIN_VERSION );
 		}
 
 	}
 
 	/**
-	 * Set the capabilities for the logs post type
+	 * Give administrators access to the email logs.
 	 */
 	public function set_logs_capabilities() {
 
 		$role = get_role( 'administrator' );
 
-		if ( is_null( $role ) ) {
+		if ( ! $role || $role->has_cap( 'read_private_logs' ) ) {
 			return;
 		}
 
-		$role->add_cap( 'edit_log' );
-		$role->add_cap( 'read_log' );
-		$role->add_cap( 'delete_log' );
-		$role->add_cap( 'edit_logs' );
-		$role->add_cap( 'edit_others_logs' );
-		$role->add_cap( 'delete_logs' );
-		$role->add_cap( 'publish_logs' );
-		$role->add_cap( 'read_private_logs' );
+		foreach ( array( 'edit_log', 'read_log', 'delete_log', 'edit_logs', 'edit_others_logs', 'delete_logs', 'publish_logs', 'read_private_logs' ) as $cap ) {
+			$role->add_cap( $cap );
+		}
 
 	}
 
